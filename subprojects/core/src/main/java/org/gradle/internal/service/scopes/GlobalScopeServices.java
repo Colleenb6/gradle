@@ -38,6 +38,7 @@ import org.gradle.api.internal.provider.PropertyFactory;
 import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.internal.tasks.properties.annotations.AbstractOutputPropertyAnnotationHandler;
 import org.gradle.api.internal.tasks.properties.annotations.OutputPropertyRoleAnnotationHandler;
+import org.gradle.api.internal.tasks.userinput.DefaultUserInputReader;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.tasks.util.PatternSet;
 import org.gradle.api.tasks.util.internal.CachingPatternSpecFactory;
@@ -76,7 +77,6 @@ import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.operations.BuildOperationListenerManager;
 import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
 import org.gradle.internal.operations.CurrentBuildOperationRef;
-import org.gradle.internal.operations.DefaultBuildOperationListenerManager;
 import org.gradle.internal.operations.DefaultBuildOperationProgressEventEmitter;
 import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.scripts.DefaultScriptFileResolver;
@@ -137,14 +137,7 @@ public class GlobalScopeServices extends WorkerSharedGlobalScopeServices {
         }
         registration.add(DefaultScriptFileResolverListeners.class);
         registration.add(BuildLayoutFactory.class);
-    }
-
-    CurrentBuildOperationRef createCurrentBuildOperationRef() {
-        return CurrentBuildOperationRef.instance();
-    }
-
-    BuildOperationListenerManager createBuildOperationListenerManager() {
-        return new DefaultBuildOperationListenerManager();
+        registration.add(DefaultUserInputReader.class);
     }
 
     ScriptFileResolver createScriptFileResolver(DefaultScriptFileResolverListeners listeners) {

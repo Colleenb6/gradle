@@ -1,19 +1,11 @@
 {
     "acceptedApiChanges": [
         {
-            "type": "org.gradle.tooling.events.problems.ProblemDescriptor",
-            "member": "Method org.gradle.tooling.events.problems.ProblemDescriptor.getDetails()",
-            "acceptation": "This is an incubating API and therefore the change is acceptable",
+            "type": "org.gradle.api.file.ConfigurableFileCollection",
+            "member": "Class org.gradle.api.file.ConfigurableFileCollection",
+            "acceptation": "Introduce SupportsConvention",
             "changes": [
-                "From non-null returning to null returning breaking change"
-            ]
-        },
-        {
-            "type": "org.gradle.tooling.events.problems.ProblemDescriptor",
-            "member": "Method org.gradle.tooling.events.problems.ProblemDescriptor.getDocumentationLink()",
-            "acceptation": "This is an incubating API and therefore the change is acceptable",
-            "changes": [
-                "From non-null returning to null returning breaking change"
+                "org.gradle.api.provider.SupportsConvention"
             ]
         }
     ]

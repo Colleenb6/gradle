@@ -78,7 +78,7 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
         this.resolver = fileResolver;
         this.dependencyFactory = dependencyFactory;
         this.host = host;
-        this.valueState = ValueState.newState(host);
+        this.valueState = ValueState.newState(host, ValueCollector::isolated);
         init(EMPTY_COLLECTOR, EMPTY_COLLECTOR);
         filesWrapper = new PathSet();
         buildDependency = dependencyFactory.configurableDependency();
@@ -330,9 +330,7 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
     }
 
     private ValueCollector copySources(ValueCollector conventionCollector) {
-        Collection<Object> source = new LinkedHashSet<>();
-        conventionCollector.collectSource(source);
-        return newValue(EMPTY_COLLECTOR, source);
+        return conventionCollector.isolated();
     }
 
     private ValueCollector newValue(ValueCollector baseValue, Object[] paths) {
@@ -345,7 +343,7 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
 
     @Override
     public ConfigurableFileCollection from(Object... paths) {
-        getConfigurer().from(paths);
+        withActualValue(it -> it.from(paths));
         return this;
     }
 
@@ -465,8 +463,9 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
         return result;
     }
 
-    public void update(Transformer<? extends @org.jetbrains.annotations.Nullable FileCollection, ? super FileCollection> transform) {
-        FileCollection newValue = transform.transform(shallowCopy());
+    @Override
+    public void replace(Transformer<? extends @org.jetbrains.annotations.Nullable FileCollection, ? super FileCollection> transformation) {
+        FileCollection newValue = transformation.transform(shallowCopy());
         if (newValue != null) {
             setFrom(newValue);
         } else {
@@ -491,6 +490,11 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
         List<Object> replace(FileCollectionInternal original, Supplier<FileCollectionInternal> supplier);
 
         boolean isEmpty();
+
+        /**
+         * Returns a shallow copy of this value collector, to avoid sharing mutable data.
+         */
+        ValueCollector isolated();
     }
 
     private static class EmptyCollector implements ValueCollector {
@@ -532,6 +536,11 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
         public List<Object> replace(FileCollectionInternal original, Supplier<FileCollectionInternal> supplier) {
             return null;
         }
+
+        @Override
+        public ValueCollector isolated() {
+            return this;
+        }
     }
 
     private static class UnresolvedItemsCollector implements ValueCollector {
@@ -552,6 +561,21 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
             this.taskDependencyFactory = taskDependencyFactory;
             this.patternSetFactory = patternSetFactory;
             Collections.addAll(items, item);
+        }
+
+        /**
+         * A copy constructor.
+         */
+        private UnresolvedItemsCollector(UnresolvedItemsCollector another) {
+            this.resolver = another.resolver;
+            this.taskDependencyFactory = another.taskDependencyFactory;
+            this.patternSetFactory = another.patternSetFactory;
+            items.addAll(another.items);
+        }
+
+        @Override
+        public ValueCollector isolated() {
+            return new UnresolvedItemsCollector(this);
         }
 
         @Override
@@ -690,6 +714,11 @@ public class DefaultConfigurableFileCollection extends CompositeFileCollection i
         @Override
         public List<Object> replace(FileCollectionInternal original, Supplier<FileCollectionInternal> supplier) {
             return null;
+        }
+
+        @Override
+        public ValueCollector isolated() {
+            return this;
         }
     }
 

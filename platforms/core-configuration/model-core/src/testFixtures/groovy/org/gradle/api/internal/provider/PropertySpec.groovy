@@ -2912,14 +2912,14 @@ The value of this provider is derived from:
         "value" | "getOrElse"
     }
 
-    def "update to itself does not trigger cycles"() {
+    def "replace to itself does not trigger cycles"() {
         def property = providerWithNoValue()
 
         given:
         property.set(someValue())
 
         when:
-        property.update { it }
+        property.replace { it }
 
         then:
         property.get() == someValue()
@@ -2969,6 +2969,10 @@ The value of this provider is derived from:
 
     ProviderInternal<T> supplierWithChangingExecutionTimeValues(T... values) {
         return ProviderTestUtil.withChangingExecutionTimeValues(values)
+    }
+
+    ProviderInternal<T> supplierWithChangingExecutionTimeValues(Class<T> cls, T... values) {
+        return ProviderTestUtil.withChangingExecutionTimeValues(cls, values)
     }
 
     ProviderInternal<T> supplierWithProducer(Task producer, T... values) {
