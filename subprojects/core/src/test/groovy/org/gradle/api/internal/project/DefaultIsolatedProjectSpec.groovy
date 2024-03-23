@@ -14,16 +14,26 @@
  * limitations under the License.
  */
 
-package org.gradle.process.internal.health.memory;
+package org.gradle.api.internal.project
 
-import org.gradle.api.NonNullApi;
 
-@NonNullApi
-public interface MBeanAttributeProvider {
-    /**
-     * Calls an mbean method if available.
-     *
-     * @throws UnsupportedOperationException if this method isn't available on this JVM.
-     */
-    <T> T getMbeanAttribute(String mbean, String attribute, Class<T> type);
+import spock.lang.Specification
+
+class DefaultIsolatedProjectSpec extends Specification {
+
+    def "delegates equals and hashCode to project"() {
+        given:
+        def project = Mock(ProjectInternal)
+        def subject = new DefaultIsolatedProject(project, project)
+
+        when:
+        def hashCode = subject.hashCode()
+        def equality = subject.equals(new DefaultIsolatedProject(project, project))
+
+        then:
+        hashCode == 42
+        equality
+        1 * project.hashCode() >> 42
+        1 * project.equals(project) >> true
+    }
 }
