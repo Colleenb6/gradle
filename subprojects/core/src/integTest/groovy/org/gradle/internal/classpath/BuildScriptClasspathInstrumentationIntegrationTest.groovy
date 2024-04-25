@@ -19,7 +19,7 @@ package org.gradle.internal.classpath
 import org.gradle.api.Action
 import org.gradle.api.internal.artifacts.ivyservice.CacheLayout
 import org.gradle.api.internal.cache.StringInterner
-import org.gradle.api.internal.initialization.transform.utils.InstrumentationAnalysisSerializer
+import org.gradle.api.internal.initialization.transform.utils.DefaultInstrumentationAnalysisSerializer
 import org.gradle.integtests.fixtures.AbstractIntegrationSpec
 import org.gradle.integtests.fixtures.cache.FileAccessTimeJournalFixture
 import org.gradle.test.fixtures.HttpRepository
@@ -37,10 +37,10 @@ import java.util.function.Supplier
 import java.util.regex.Pattern
 import java.util.stream.Collectors
 
-import static org.gradle.api.internal.initialization.transform.services.CacheInstrumentationDataBuildService.GENERATE_CLASS_HIERARCHY_WITHOUT_UPGRADES_PROPERTY
-import static org.gradle.api.internal.initialization.transform.utils.InstrumentationTransformUtils.ANALYSIS_FILE_NAME
 import static org.gradle.api.internal.initialization.transform.utils.InstrumentationTransformUtils.ANALYSIS_OUTPUT_DIR
+import static org.gradle.api.internal.initialization.transform.utils.InstrumentationTransformUtils.DEPENDENCY_ANALYSIS_FILE_NAME
 import static org.gradle.api.internal.initialization.transform.utils.InstrumentationTransformUtils.MERGE_OUTPUT_DIR
+import static org.gradle.api.internal.initialization.transform.utils.InstrumentationTransformUtils.TYPE_HIERARCHY_ANALYSIS_FILE_NAME
 import static org.gradle.util.internal.TextUtil.normaliseFileSeparators
 
 class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegrationSpec implements FileAccessTimeJournalFixture {
@@ -48,7 +48,7 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
     @Rule
     public final RepositoryHttpServer server = new RepositoryHttpServer(temporaryFolder)
 
-    def serializer = new InstrumentationAnalysisSerializer(new StringInterner())
+    def serializer = new DefaultInstrumentationAnalysisSerializer(new StringInterner())
 
     def setup() {
         requireOwnGradleUserHomeDir("We test content in the global cache")
@@ -285,22 +285,24 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
         then:
         // InstrumentationAnalysisTransform is duplicated since InstrumentationAnalysisTransform result is also an input to MergeInstrumentationAnalysisTransform
         allTransformsFor("animals-1.0.jar") ==~ ["InstrumentationAnalysisTransform", "InstrumentationAnalysisTransform", "MergeInstrumentationAnalysisTransform", "ExternalDependencyInstrumentingArtifactTransform"]
-        def analysis = analyzeOutput("animals-1.0.jar")
-        analysis.exists()
-        serializer.readAnalysis(analysis).typeHierarchy == [
+        def typeHierarchyAnalysis = typeHierarchyAnalysisOutput("animals-1.0.jar")
+        typeHierarchyAnalysis.exists()
+        serializer.readTypeHierarchyAnalysis(typeHierarchyAnalysis) == [
             "test/gradle/test/Dog": ["test/gradle/test/Mammal"] as Set<String>,
             "test/gradle/test/GermanShepherd": ["test/gradle/test/Animal", "test/gradle/test/Dog"] as Set<String>,
             "test/gradle/test/Mammal": ["test/gradle/test/Animal"] as Set<String>
         ]
-        serializer.readAnalysis(analysis).dependencies == [
-            "org/gradle/api/DefaultTask",
-            "org/gradle/api/GradleException",
-            "org/gradle/api/Plugin",
-            "org/gradle/api/Task",
-            "test/gradle/test/Animal",
-            "test/gradle/test/Dog",
-            "test/gradle/test/Mammal"
-        ] as Set<String>
+        def dependencyAnalysis = dependencyAnalysisOutput("animals-1.0.jar")
+        dependencyAnalysis.exists()
+        serializer.readDependencyAnalysis(dependencyAnalysis).dependencies == [
+            "org/gradle/api/DefaultTask": [] as Set<String>,
+            "org/gradle/api/GradleException": [] as Set<String>,
+            "org/gradle/api/Plugin": [] as Set<String>,
+            "org/gradle/api/Task": [] as Set<String>,
+            "test/gradle/test/Animal": [] as Set<String>,
+            "test/gradle/test/Dog": [] as Set<String>,
+            "test/gradle/test/Mammal": [] as Set<String>,
+        ]
     }
 
     def "should output only org.gradle supertypes for class dependencies"() {
@@ -324,17 +326,17 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
 
         when:
         executer.inDirectory(file("subproject")).withTasks("jar").run()
-        run("tasks", "-D$GENERATE_CLASS_HIERARCHY_WITHOUT_UPGRADES_PROPERTY=true")
+        run("tasks")
 
         then:
-        mergeOutput("impl-1.0.jar").exists()
-        mergeOutput("api-1.0.jar").exists()
-        def implMergeAnalysis = mergeOutput("impl-1.0.jar")
-        serializer.readAnalysis(implMergeAnalysis).typeHierarchy == [
+        mergeAnalysisOutput("impl-1.0.jar").exists()
+        mergeAnalysisOutput("api-1.0.jar").exists()
+        def implMergeAnalysis = mergeAnalysisOutput("impl-1.0.jar")
+        serializer.readDependencyAnalysis(implMergeAnalysis).dependencies == [
             "B": ["org/gradle/D", "org/gradle/E"] as Set
         ]
-        def apiMergeAnalysis = mergeOutput("api-1.0.jar")
-        serializer.readAnalysis(apiMergeAnalysis).typeHierarchy == [
+        def apiMergeAnalysis = mergeAnalysisOutput("api-1.0.jar")
+        serializer.readDependencyAnalysis(apiMergeAnalysis).dependencies == [
             "C": ["org/gradle/D", "org/gradle/E"] as Set,
             "org/gradle/D": ["org/gradle/D", "org/gradle/E"] as Set,
             "org/gradle/E": ["org/gradle/E"] as Set
@@ -363,7 +365,7 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
 
         when:
         executer.inDirectory(file("subproject")).withTasks("jar").run()
-        run("tasks", "-D$GENERATE_CLASS_HIERARCHY_WITHOUT_UPGRADES_PROPERTY=true")
+        run("tasks")
 
         then:
         gradleUserHomeOutputs("instrumented/instrumented-api-1.0.jar").size() == 1
@@ -373,7 +375,7 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
         file("subproject/api/src/main/java/B.java").text = "import org.gradle.C; public class B extends C {}"
         file("subproject/api/src/main/java/org/gradle/C.java") << "package org.gradle; public class C {}"
         executer.inDirectory(file("subproject")).withTasks("jar").run()
-        run("tasks", "-D$GENERATE_CLASS_HIERARCHY_WITHOUT_UPGRADES_PROPERTY=true")
+        run("tasks")
 
         then:
         gradleUserHomeOutputs("instrumented/instrumented-api-1.0.jar").size() == 2
@@ -402,7 +404,7 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
 
         when:
         executer.inDirectory(file("subproject")).withTasks("jar").run()
-        run("tasks", "-D$GENERATE_CLASS_HIERARCHY_WITHOUT_UPGRADES_PROPERTY=true")
+        run("tasks")
 
         then:
         gradleUserHomeOutputs("instrumented/instrumented-api-1.0.jar").size() == 1
@@ -412,7 +414,7 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
         file("subproject/api/src/main/java/B.java").text = "public class B extends C {}"
         file("subproject/api/src/main/java/C.java") << "public class C {}"
         executer.inDirectory(file("subproject")).withTasks("jar").run()
-        run("tasks", "-D$GENERATE_CLASS_HIERARCHY_WITHOUT_UPGRADES_PROPERTY=true")
+        run("tasks")
 
         then:
         gradleUserHomeOutputs("instrumented/instrumented-api-1.0.jar").size() == 2
@@ -471,6 +473,91 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
 
         then:
         run("help")
+    }
+
+    def "external dependencies merge analysis is #mergeRun if type hierarchy #typeHierachyChange for local project"() {
+        given:
+        withIncludedBuild()
+        file("included/src/main/java/Foo.java") << "class Foo {}"
+        file("included/src/main/java/Bar.java") << "class Bar {}"
+        buildFile << """
+            import java.nio.file.Paths
+
+            buildscript {
+                repositories {
+                    ${mavenCentralRepository()}
+                }
+                dependencies {
+                    classpath "org.test:included"
+                    classpath "org.apache.commons:commons-lang3:3.8.1"
+                }
+            }
+        """
+
+        when:
+        run("tasks")
+
+        then:
+        typeHierarchyAnalysisOutputs("commons-lang3-3.8.1.jar").size() == 1
+        dependencyAnalysisOutputs("commons-lang3-3.8.1.jar").size() == 1
+        mergeAnalysisOutputs("commons-lang3-3.8.1.jar").size() == 1
+
+        when:
+        file("included/src/main/java/Bar.java").text = barContentOnChange
+        run("tasks")
+
+        then:
+        typeHierarchyAnalysisOutputs("commons-lang3-3.8.1.jar").size() == 1
+        dependencyAnalysisOutputs("commons-lang3-3.8.1.jar").size() == 1
+        mergeAnalysisOutputs("commons-lang3-3.8.1.jar").size() == expectedFinalMergeAnalysisOutputs
+
+        where:
+        mergeRun     | typeHierachyChange | barContentOnChange                   | expectedFinalMergeAnalysisOutputs
+        "re-run"     | "is changed"       | "class Bar extends Foo {}"           | 2
+        "not re-run" | "is not changed"   | "class Bar { public void bar() {} }" | 1
+    }
+
+    def "project dependency analysis is #analysisRun if classes are #classChangeDescription and recompiled"() {
+        given:
+        withIncludedBuild()
+        file("included/src/main/java/Foo.java") << "class Foo {}"
+        file("included/src/main/java/Bar.java") << "class Bar {}"
+        buildFile << """
+            buildscript {
+                repositories {
+                    ${mavenCentralRepository()}
+                }
+                dependencies {
+                    classpath "org.test:included"
+                    classpath "org.apache.commons:commons-lang3:3.8.1"
+                }
+            }
+        """
+
+        when:
+        run(":included:clean", "tasks")
+
+        then:
+        // Artifact name == "main" since in transform we get "classes/<language>/main" directory
+        // as an input and we write a file name to the metadata as artifact name
+        def artifactName = "main"
+        typeHierarchyAnalysisOutputs(artifactName).size() == 1
+        dependencyAnalysisOutputs(artifactName).size() == 1
+        mergeAnalysisOutputs(artifactName).size() == 0
+
+        when:
+        file("included/src/main/java/Bar.java").text = barContentOnChange
+        run(":included:clean", "tasks")
+
+        then:
+        typeHierarchyAnalysisOutputs(artifactName).size() == expectedFinalAnalysisOutputs
+        dependencyAnalysisOutputs(artifactName).size() == expectedFinalAnalysisOutputs
+        mergeAnalysisOutputs(artifactName).size() == 0
+
+        where:
+        analysisRun  | classChangeDescription | barContentOnChange                    | expectedFinalAnalysisOutputs
+        "not re-run" | "not changed"          | "class Bar {}"                        | 1
+        "re-run"     | "changed"              | "class Bar { private void bar() {} }" | 2
     }
 
     def withBuildSrc() {
@@ -592,32 +679,50 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
         return transforms
     }
 
-    Set<TestFile> analyzeOutputs(String artifactName, File cacheDir = getCacheDir()) {
-        return findOutputs("$ANALYSIS_OUTPUT_DIR/$ANALYSIS_FILE_NAME", cacheDir).findAll {
-            serializer.readOnlyMetadata(it).artifactName == artifactName
-        }.collect { it } as Set<TestFile>
+    Set<TestFile> analyzeOutputs(String artifactName, String fileName, File cacheDir = getCacheDir()) {
+        return findOutputs("$ANALYSIS_OUTPUT_DIR/$DEPENDENCY_ANALYSIS_FILE_NAME", cacheDir).findAll {
+            serializer.readMetadataOnly(it).artifactName == artifactName
+        }.collect {
+            it.parentFile.listFiles().findAll { it.name == fileName }
+        }.flatten() as Set<TestFile>
     }
 
-    TestFile analyzeOutput(String artifactName, File cacheDir = getCacheDir()) {
-        def analysis = analyzeOutputs(artifactName, cacheDir)
+    Set<TestFile> typeHierarchyAnalysisOutputs(String artifactName, File cacheDir = getCacheDir()) {
+        return analyzeOutputs(artifactName, TYPE_HIERARCHY_ANALYSIS_FILE_NAME, cacheDir)
+    }
+
+    TestFile typeHierarchyAnalysisOutput(String artifactName, File cacheDir = getCacheDir()) {
+        def analysis = typeHierarchyAnalysisOutputs(artifactName, cacheDir)
         if (analysis.size() == 1) {
             return analysis.first()
         }
-        throw new AssertionError("Could not find exactly one analyze directory for $artifactName: $analysis")
+        throw new AssertionError("Could not find exactly one type hierarchy analysis for $artifactName: $analysis")
     }
 
-    Set<TestFile> mergeOutputs(String artifactName, File cacheDir = getCacheDir()) {
-        return findOutputs("$MERGE_OUTPUT_DIR/$ANALYSIS_FILE_NAME", cacheDir).findAll {
-            serializer.readOnlyMetadata(it).artifactName == artifactName
-        }.collect { it } as Set<TestFile>
+    Set<TestFile> dependencyAnalysisOutputs(String artifactName, File cacheDir = getCacheDir()) {
+        return analyzeOutputs(artifactName, DEPENDENCY_ANALYSIS_FILE_NAME, cacheDir)
     }
 
-    TestFile mergeOutput(String artifactName, File cacheDir = getCacheDir()) {
-        def analysis = mergeOutputs(artifactName, cacheDir)
+    TestFile dependencyAnalysisOutput(String artifactName, File cacheDir = getCacheDir()) {
+        def analysis = dependencyAnalysisOutputs(artifactName, cacheDir)
         if (analysis.size() == 1) {
             return analysis.first()
         }
-        throw new AssertionError("Could not find exactly one merge directory for $artifactName: $analysis")
+        throw new AssertionError("Could not find exactly one dependency analysis for $artifactName: $analysis")
+    }
+
+    Set<TestFile> mergeAnalysisOutputs(String artifactName, File cacheDir = getCacheDir()) {
+        return findOutputs("$MERGE_OUTPUT_DIR/$DEPENDENCY_ANALYSIS_FILE_NAME", cacheDir).findAll {
+            serializer.readMetadataOnly(it).artifactName == artifactName
+        }.collect { it } as Set<TestFile>
+    }
+
+    TestFile mergeAnalysisOutput(String artifactName, File cacheDir = getCacheDir()) {
+        def analysis = mergeAnalysisOutputs(artifactName, cacheDir)
+        if (analysis.size() == 1) {
+            return analysis.first()
+        }
+        throw new AssertionError("Could not find exactly one merge dependency analysis for $artifactName: $analysis")
     }
 
     TestFile gradleUserHomeOutput(String outputEndsWith, File cacheDir = getCacheDir()) {
@@ -643,6 +748,6 @@ class BuildScriptClasspathInstrumentationIntegrationTest extends AbstractIntegra
     }
 
     TestFile getCacheDir() {
-        return getUserHomeCacheDir().file(CacheLayout.TRANSFORMS.getKey())
+        return getGradleVersionedCacheDir().file(CacheLayout.TRANSFORMS.getName())
     }
 }

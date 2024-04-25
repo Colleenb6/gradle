@@ -26,6 +26,8 @@ import org.gradle.internal.concurrent.ManagedExecutor
 import org.gradle.internal.hash.HashCode
 import org.gradle.internal.hash.Hashing
 import org.gradle.internal.hash.HashingOutputStream
+import org.gradle.internal.problems.failure.Failure
+import org.gradle.internal.problems.failure.FailureFactory
 import org.gradle.internal.service.scopes.Scope
 import org.gradle.internal.service.scopes.ServiceScope
 import java.io.Closeable
@@ -40,7 +42,8 @@ import kotlin.contracts.contract
 class ConfigurationCacheReport(
     executorFactory: ExecutorFactory,
     temporaryFileProvider: TemporaryFileProvider,
-    internalOptions: InternalOptions
+    internalOptions: InternalOptions,
+    private val failureFactory: FailureFactory
 ) : Closeable {
 
     companion object {
@@ -62,8 +65,9 @@ class ConfigurationCacheReport(
          */
         open fun commitReportTo(
             outputDirectory: File,
+            buildDisplayName: String?,
             cacheAction: String,
-            requestedTasks: String,
+            requestedTasks: String?,
             totalProblemCount: Int
         ): Pair<State, File?> =
             illegalState()
@@ -84,8 +88,9 @@ class ConfigurationCacheReport(
              */
             override fun commitReportTo(
                 outputDirectory: File,
+                buildDisplayName: String?,
                 cacheAction: String,
-                requestedTasks: String,
+                requestedTasks: String?,
                 totalProblemCount: Int
             ): Pair<State, File?> =
                 this to null
@@ -104,7 +109,7 @@ class ConfigurationCacheReport(
              * [JsonModelWriter] uses Groovy's [CharBuf] for fast json encoding.
              */
             val groovyJsonClassLoader: ClassLoader,
-            val decorate: (PropertyProblem) -> DecoratedPropertyProblem
+            val decorate: (PropertyProblem, ProblemSeverity) -> DecoratedPropertyProblem
         ) : State() {
 
             private
@@ -122,16 +127,24 @@ class ConfigurationCacheReport(
 
             override fun onDiagnostic(kind: DiagnosticKind, problem: PropertyProblem): State {
                 executor.submit {
-                    writer.writeDiagnostic(kind, decorate(problem))
+                    val severity = if (kind == DiagnosticKind.PROBLEM) ProblemSeverity.Failure else ProblemSeverity.Info
+                    writer.writeDiagnostic(kind, decorate(problem, severity))
                 }
                 return this
             }
 
-            override fun commitReportTo(outputDirectory: File, cacheAction: String, requestedTasks: String, totalProblemCount: Int): Pair<State, File?> {
+            override fun commitReportTo(
+                outputDirectory: File,
+                buildDisplayName: String?,
+                cacheAction: String,
+                requestedTasks: String?,
+                totalProblemCount: Int
+            ): Pair<State, File?> {
+
                 val reportFile = try {
                     executor
                         .submit(Callable {
-                            closeHtmlReport(cacheAction, requestedTasks, totalProblemCount)
+                            closeHtmlReport(buildDisplayName, cacheAction, requestedTasks, totalProblemCount)
                             moveSpoolFileTo(outputDirectory)
                         })
                         .get(30, TimeUnit.SECONDS)
@@ -154,8 +167,8 @@ class ConfigurationCacheReport(
             }
 
             private
-            fun closeHtmlReport(cacheAction: String, requestedTasks: String, totalProblemCount: Int) {
-                writer.endHtmlReport(cacheAction, requestedTasks, totalProblemCount)
+            fun closeHtmlReport(buildDisplayName: String?, cacheAction: String, requestedTasks: String?, totalProblemCount: Int) {
+                writer.endHtmlReport(buildDisplayName, cacheAction, requestedTasks, totalProblemCount)
                 writer.close()
             }
 
@@ -212,31 +225,40 @@ class ConfigurationCacheReport(
     val stateLock = Object()
 
     private
-    val stackTraceExtractor = StackTraceExtractor()
+    val failureDecorator = FailureDecorator()
 
     private
-    val exceptionDecorator = ExceptionDecorator(stackTraceExtractor::stackTraceStringFor)
-
-    private
-    fun decorateProblem(problem: PropertyProblem): DecoratedPropertyProblem {
-        val exception = problem.exception
+    fun decorateProblem(problem: PropertyProblem, severity: ProblemSeverity): DecoratedPropertyProblem {
+        val failure = problem.exception?.toFailure()
         return DecoratedPropertyProblem(
             problem.trace,
-            decorateMessage(problem),
-            exception?.let { exceptionDecorator.decorateException(it) },
+            decorateMessage(problem, failure),
+            decoratedFailureFor(failure, severity),
             problem.documentationSection
         )
     }
 
     private
-    fun decorateMessage(problem: PropertyProblem): StructuredMessage {
-        if (!isStacktraceHashes || problem.exception == null) {
+    fun Throwable.toFailure() = failureFactory.create(this)
+
+    private
+    fun decoratedFailureFor(failure: Failure?, severity: ProblemSeverity): DecoratedFailure? {
+        return when {
+            failure != null -> failureDecorator.decorate(failure)
+            severity == ProblemSeverity.Failure -> DecoratedFailure.MARKER
+            else -> null
+        }
+    }
+
+    private
+    fun decorateMessage(problem: PropertyProblem, failure: Failure?): StructuredMessage {
+        if (!isStacktraceHashes || failure == null) {
             return problem.message
         }
 
-        val exceptionHash = problem.exception.hashWithoutMessages()
+        val failureHash = failure.hashWithoutMessages()
         return StructuredMessage.build {
-            reference("[${exceptionHash.toCompactString()}]")
+            reference("[${failureHash.toCompactString()}]")
             text(" ")
             message(problem.message)
         }
@@ -267,10 +289,10 @@ class ConfigurationCacheReport(
      * see [HtmlReportWriter].
      */
     internal
-    fun writeReportFileTo(outputDirectory: File, cacheAction: String, requestedTasks: String, totalProblemCount: Int): File? {
+    fun writeReportFileTo(outputDirectory: File, buildDisplayName: String?, cacheAction: String, requestedTasks: String?, totalProblemCount: Int): File? {
         var reportFile: File?
         modifyState {
-            val (newState, outputFile) = commitReportTo(outputDirectory, cacheAction, requestedTasks, totalProblemCount)
+            val (newState, outputFile) = commitReportTo(outputDirectory, buildDisplayName, cacheAction, requestedTasks, totalProblemCount)
             reportFile = outputFile
             newState
         }
@@ -292,18 +314,22 @@ class ConfigurationCacheReport(
      * occurring at the same location.
      */
     private
-    fun Throwable.hashWithoutMessages(): HashCode {
-        val e = this@hashWithoutMessages
-        return Hashing.newHasher().apply {
-            putString(e.javaClass.name)
-            // Ignore messages and only take stack frames into account
-            stackTraceStringFor(e).lineSequence()
-                .filter { it.isStackFrameLine() }
-                .forEach { putString(it) }
-        }.hash()
+    fun Failure.hashWithoutMessages(): HashCode {
+        val root = this@hashWithoutMessages
+        val hasher = Hashing.newHasher()
+        for (failure in sequence { visitFailures(root) }) {
+            hasher.putString(failure.exceptionType.name)
+            for (element in failure.stackTrace) {
+                hasher.putString(element.toString())
+            }
+        }
+        return hasher.hash()
     }
 
     private
-    fun stackTraceStringFor(error: Throwable): String =
-        stackTraceExtractor.stackTraceStringFor(error)
+    suspend fun SequenceScope<Failure>.visitFailures(failure: Failure) {
+        yield(failure)
+        failure.suppressed.forEach { visitFailures(it) }
+        failure.causes.forEach { visitFailures(it) }
+    }
 }

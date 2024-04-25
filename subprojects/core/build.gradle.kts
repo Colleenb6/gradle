@@ -1,5 +1,6 @@
 plugins {
     id("gradlebuild.distribution.api-java")
+    id("gradlebuild.instrumented-project")
 }
 
 description = "Public and internal 'core' Gradle APIs with implementation"
@@ -68,8 +69,6 @@ errorprone {
         "TypeParameterShadowing", // 1 occurrences
         "TypeParameterUnusedInFormals", // 2 occurrences
         "UndefinedEquals", // 1 occurrences
-        "UnnecessaryLambda", // 1 occurrences
-        "UnnecessaryParentheses", // 1 occurrences
         "UnrecognisedJavadocTag", // 1 occurrences
         "UnusedMethod", // 18 occurrences
         "UnusedVariable", // 8 occurrences
@@ -77,7 +76,10 @@ errorprone {
 }
 
 dependencies {
-    api(project(":base-annotations"))
+    api(projects.concurrent)
+    api(projects.javaLanguageExtensions)
+    api(projects.serialization)
+    api(projects.time)
     api(project(":base-services"))
     api(project(":base-services-groovy"))
     api(project(":build-cache"))
@@ -89,6 +91,7 @@ dependencies {
     api(project(":build-option"))
     api(project(":cli"))
     api(project(":core-api"))
+    api(project(":declarative-dsl-api"))
     api(project(":enterprise-logging"))
     api(project(":enterprise-operations"))
     api(project(":execution"))
@@ -123,9 +126,8 @@ dependencies {
     api(libs.jsr305)
     api(libs.nativePlatform)
 
-    implementation(project(":core-jvm")) {
-        because("This is temporary, as ideally the core-jvm project would (optionally) depend on the core project.  This would require a base-core project, or some other common dep of both core and core-jvm to hold common code that is not yet created.")
-    }
+    implementation(projects.io)
+    implementation(project(":base-asm"))
     implementation(project(":input-tracking"))
     implementation(project(":model-groovy"))
 
@@ -248,6 +250,7 @@ dependencies {
 
     testImplementation(project(":dependency-management"))
 
+    testImplementation(testFixtures(projects.serialization))
     testImplementation(testFixtures(project(":core-api")))
     testImplementation(testFixtures(project(":messaging")))
     testImplementation(testFixtures(project(":model-core")))
@@ -305,7 +308,3 @@ tasks.compileTestGroovy {
 integTest.usesJavadocCodeSnippets = true
 testFilesCleanup.reportOnly = true
 
-// Remove as part of fixing https://github.com/gradle/configuration-cache/issues/585
-tasks.configCacheIntegTest {
-    systemProperties["org.gradle.configuration-cache.internal.test-disable-load-after-store"] = "true"
-}

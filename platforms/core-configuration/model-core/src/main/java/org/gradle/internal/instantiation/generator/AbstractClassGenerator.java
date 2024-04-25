@@ -33,6 +33,7 @@ import org.gradle.api.Action;
 import org.gradle.api.Describable;
 import org.gradle.api.DomainObjectSet;
 import org.gradle.api.ExtensiblePolymorphicDomainObjectContainer;
+import org.gradle.api.IsolatedAction;
 import org.gradle.api.NamedDomainObjectContainer;
 import org.gradle.api.NonExtensible;
 import org.gradle.api.artifacts.dsl.DependencyCollector;
@@ -53,6 +54,7 @@ import org.gradle.api.provider.SupportsConvention;
 import org.gradle.api.reflect.InjectionPointQualifier;
 import org.gradle.api.tasks.Nested;
 import org.gradle.cache.internal.CrossBuildInMemoryCache;
+import org.gradle.api.internal.plugins.software.SoftwareType;
 import org.gradle.internal.Cast;
 import org.gradle.internal.extensibility.NoConventionMapping;
 import org.gradle.internal.instantiation.ClassGenerationException;
@@ -125,6 +127,12 @@ abstract class AbstractClassGenerator implements ClassGenerator {
         DomainObjectSet.class,
         DependencyCollector.class
     );
+
+    private static final ImmutableSet<Class<? extends Annotation>> NESTED_ANNOTATION_TYPES = ImmutableSet.of(
+        Nested.class,
+        SoftwareType.class
+    );
+
     private static final Object[] NO_PARAMS = new Object[0];
 
     private final CrossBuildInMemoryCache<Class<?>, GeneratedClassImpl> generatedClasses;
@@ -403,7 +411,11 @@ abstract class AbstractClassGenerator implements ClassGenerator {
 
     private static boolean isManagedProperty(PropertyMetadata property) {
         // Property is readable and without a setter of property type and the type can be created
-        return property.isReadableWithoutSetterOfPropertyType() && (MANAGED_PROPERTY_TYPES.contains(property.getType()) || property.hasAnnotation(Nested.class));
+        return property.isReadableWithoutSetterOfPropertyType() && (MANAGED_PROPERTY_TYPES.contains(property.getType()) || hasNestedAnnotation(property));
+    }
+
+    private static boolean hasNestedAnnotation(PropertyMetadata property) {
+        return NESTED_ANNOTATION_TYPES.stream().anyMatch(property::hasAnnotation);
     }
 
     private static boolean isEagerAttachProperty(PropertyMetadata property) {
@@ -421,7 +433,7 @@ abstract class AbstractClassGenerator implements ClassGenerator {
     private static boolean isLazyAttachProperty(PropertyMetadata property) {
         // Property is readable and without a setter of property type and getter is not final, so attach owner lazily when queried
         // This should apply to all 'managed' types however only the Provider types and @Nested value current implement OwnerAware
-        return property.isReadableWithoutSetterOfPropertyType() && !property.getOverridableGetters().isEmpty() && (Provider.class.isAssignableFrom(property.getType()) || property.hasAnnotation(Nested.class));
+        return property.isReadableWithoutSetterOfPropertyType() && !property.getOverridableGetters().isEmpty() && (Provider.class.isAssignableFrom(property.getType()) || hasNestedAnnotation(property));
     }
 
     private static boolean isNameProperty(PropertyMetadata property) {
@@ -444,7 +456,11 @@ abstract class AbstractClassGenerator implements ClassGenerator {
     }
 
     private static boolean isAttachableType(MethodMetadata method) {
-        return Provider.class.isAssignableFrom(method.getReturnType()) || method.method.getAnnotation(Nested.class) != null;
+        return Provider.class.isAssignableFrom(method.getReturnType()) || hasNestedAnnotation(method);
+    }
+
+    private static boolean hasNestedAnnotation(MethodMetadata method) {
+        return NESTED_ANNOTATION_TYPES.stream().anyMatch(annotation -> method.method.getAnnotation(annotation) != null);
     }
 
     private boolean isRoleType(PropertyMetadata property) {
@@ -856,12 +872,17 @@ abstract class AbstractClassGenerator implements ClassGenerator {
         @Override
         public void visitInstanceMethod(Method method) {
             Class<?>[] parameterTypes = method.getParameterTypes();
-            if (parameterTypes.length > 0 && parameterTypes[parameterTypes.length - 1].equals(Action.class)) {
-                actionMethods.add(method);
-            } else if (parameterTypes.length > 0 && parameterTypes[parameterTypes.length - 1].equals(Closure.class)) {
-                closureMethods.put(method.getName(), method);
-            } else if (method.getName().equals("toString") && parameterTypes.length == 0 && method.getDeclaringClass() != Object.class) {
-                providesOwnToString = true;
+            if (parameterTypes.length == 0) {
+                if (method.getName().equals("toString") && method.getDeclaringClass() != Object.class) {
+                    providesOwnToString = true;
+                }
+            } else {
+                Class<?> lastParameterType = parameterTypes[parameterTypes.length - 1];
+                if (lastParameterType.equals(Action.class) || lastParameterType.equals(IsolatedAction.class)) {
+                    actionMethods.add(method);
+                } else if (lastParameterType.equals(Closure.class)) {
+                    closureMethods.put(method.getName(), method);
+                }
             }
         }
 

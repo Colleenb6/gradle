@@ -22,7 +22,6 @@ import org.gradle.internal.declarativedsl.analysis.DataProperty
 import org.gradle.internal.declarativedsl.analysis.DataTypeRef
 import org.gradle.internal.declarativedsl.analysis.FqName
 import org.gradle.internal.declarativedsl.evaluationSchema.EvaluationSchemaComponent
-import org.gradle.internal.declarativedsl.mappingToJvm.DeclarativeRuntimeProperty
 import org.gradle.internal.declarativedsl.mappingToJvm.RuntimePropertyResolver
 import org.gradle.internal.declarativedsl.schemaBuilder.CollectedPropertyInformation
 import org.gradle.internal.declarativedsl.schemaBuilder.DefaultPropertyExtractor
@@ -42,6 +41,7 @@ import kotlin.reflect.full.isSubclassOf
  * * for each typesafe accessor container type, extracts its properties (see [TypesafeProjectPropertyProducer]);
  * * at runtime, resolves property access to the `projects` property on [Project] instances.
  */
+@Suppress("unused") // temporarily excluded from the schema, awaiting rework in a way that does not require the target scope
 internal
 class TypesafeProjectAccessorsComponent(targetScope: ClassLoaderScope) : EvaluationSchemaComponent {
     private
@@ -87,17 +87,12 @@ class TypesafeProjectAccessorsComponent(targetScope: ClassLoaderScope) : Evaluat
 
 private
 class ProjectPropertyAccessorRuntimeResolver : RuntimePropertyResolver {
-    override fun resolvePropertyRead(receiverClass: KClass<*>, name: String): RuntimePropertyResolver.Resolution {
+    override fun resolvePropertyRead(receiverClass: KClass<*>, name: String): RuntimePropertyResolver.ReadResolution =
         if (receiverClass.isSubclassOf(Project::class) && name == "projects") {
-            return RuntimePropertyResolver.Resolution.Resolved(object : DeclarativeRuntimeProperty {
-                override fun getValue(receiver: Any) = (receiver as Project).extensions.getByName("projects")
-                override fun setValue(receiver: Any, value: Any?): Unit = throw UnsupportedOperationException()
-            })
-        }
-        return RuntimePropertyResolver.Resolution.Unresolved
-    }
+            RuntimePropertyResolver.ReadResolution.ResolvedRead { receiver -> (receiver as Project).extensions.getByName("projects") }
+        } else RuntimePropertyResolver.ReadResolution.UnresolvedRead
 
-    override fun resolvePropertyWrite(receiverClass: KClass<*>, name: String): RuntimePropertyResolver.Resolution = RuntimePropertyResolver.Resolution.Unresolved
+    override fun resolvePropertyWrite(receiverClass: KClass<*>, name: String) = RuntimePropertyResolver.WriteResolution.UnresolvedWrite
 }
 
 
@@ -128,7 +123,7 @@ class TypesafeProjectAccessorTypeDiscovery : TypeDiscovery {
         fun visit(type: KType) {
             val classifier = type.classifier
             if (classifier is KClass<*> && add(classifier)) {
-                classifier.supertypes.forEach(::visit)
+                (classifier.supertypes - Any::class.createType()).forEach(::visit) // No need to visit Any, it only clutters the extracted functions
             }
         }
         add(kClass)

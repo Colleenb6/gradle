@@ -36,8 +36,8 @@ import org.gradle.internal.Factory;
 import org.gradle.internal.code.UserCodeApplicationContext;
 import org.gradle.internal.event.ListenerBroadcast;
 import org.gradle.internal.event.ListenerManager;
-import org.gradle.internal.model.CalculatedValueContainerFactory;
-import org.gradle.internal.operations.BuildOperationExecutor;
+import org.gradle.internal.model.CalculatedValueFactory;
+import org.gradle.internal.operations.BuildOperationRunner;
 import org.gradle.internal.reflect.Instantiator;
 import org.gradle.internal.typeconversion.NotationParser;
 import org.gradle.internal.work.WorkerThreadRegistry;
@@ -59,7 +59,7 @@ public class DefaultConfigurationFactory {
     private final DependencyLockingProvider dependencyLockingProvider;
     private final DomainObjectContext domainObjectContext;
     private final FileCollectionFactory fileCollectionFactory;
-    private final BuildOperationExecutor buildOperationExecutor;
+    private final BuildOperationRunner buildOperationRunner;
     private final NotationParser<Object, ConfigurablePublishArtifact> artifactNotationParser;
     private final NotationParser<Object, Capability> capabilityNotationParser;
     private final ImmutableAttributesFactory attributesFactory;
@@ -68,7 +68,7 @@ public class DefaultConfigurationFactory {
     private final ProjectStateRegistry projectStateRegistry;
     private final WorkerThreadRegistry workerThreadRegistry;
     private final DomainObjectCollectionFactory domainObjectCollectionFactory;
-    private final CalculatedValueContainerFactory calculatedValueContainerFactory;
+    private final CalculatedValueFactory calculatedValueFactory;
     private final TaskDependencyFactory taskDependencyFactory;
 
     @Inject
@@ -81,7 +81,7 @@ public class DefaultConfigurationFactory {
         DependencyLockingProvider dependencyLockingProvider,
         DomainObjectContext domainObjectContext,
         FileCollectionFactory fileCollectionFactory,
-        BuildOperationExecutor buildOperationExecutor,
+        BuildOperationRunner buildOperationRunner,
         PublishArtifactNotationParserFactory artifactNotationParserFactory,
         ImmutableAttributesFactory attributesFactory,
         ResolveExceptionContextualizer exceptionContextualizer,
@@ -89,7 +89,7 @@ public class DefaultConfigurationFactory {
         ProjectStateRegistry projectStateRegistry,
         WorkerThreadRegistry workerThreadRegistry,
         DomainObjectCollectionFactory domainObjectCollectionFactory,
-        CalculatedValueContainerFactory calculatedValueContainerFactory,
+        CalculatedValueFactory calculatedValueFactory,
         TaskDependencyFactory taskDependencyFactory
     ) {
         this.instantiator = instantiator;
@@ -100,7 +100,7 @@ public class DefaultConfigurationFactory {
         this.dependencyLockingProvider = dependencyLockingProvider;
         this.domainObjectContext = domainObjectContext;
         this.fileCollectionFactory = fileCollectionFactory;
-        this.buildOperationExecutor = buildOperationExecutor;
+        this.buildOperationRunner = buildOperationRunner;
         this.artifactNotationParser = artifactNotationParserFactory.create();
         this.capabilityNotationParser = new CapabilityNotationParserFactory(true).create();
         this.attributesFactory = attributesFactory;
@@ -109,7 +109,7 @@ public class DefaultConfigurationFactory {
         this.projectStateRegistry = projectStateRegistry;
         this.workerThreadRegistry = workerThreadRegistry;
         this.domainObjectCollectionFactory = domainObjectCollectionFactory;
-        this.calculatedValueContainerFactory = calculatedValueContainerFactory;
+        this.calculatedValueFactory = calculatedValueFactory;
         this.taskDependencyFactory = taskDependencyFactory;
     }
 
@@ -137,7 +137,7 @@ public class DefaultConfigurationFactory {
                 dependencyLockingProvider,
                 resolutionStrategyFactory,
                 fileCollectionFactory,
-                buildOperationExecutor,
+            buildOperationRunner,
                 instantiator,
                 artifactNotationParser,
                 capabilityNotationParser,
@@ -148,7 +148,7 @@ public class DefaultConfigurationFactory {
                 projectStateRegistry,
                 workerThreadRegistry,
                 domainObjectCollectionFactory,
-                calculatedValueContainerFactory,
+                calculatedValueFactory,
                 this,
                 taskDependencyFactory,
                 role
@@ -180,7 +180,7 @@ public class DefaultConfigurationFactory {
             dependencyLockingProvider,
             resolutionStrategyFactory,
             fileCollectionFactory,
-            buildOperationExecutor,
+            buildOperationRunner,
             instantiator,
             artifactNotationParser,
             capabilityNotationParser,
@@ -191,7 +191,7 @@ public class DefaultConfigurationFactory {
             projectStateRegistry,
             workerThreadRegistry,
             domainObjectCollectionFactory,
-            calculatedValueContainerFactory,
+            calculatedValueFactory,
             this,
             taskDependencyFactory
         );
@@ -222,7 +222,7 @@ public class DefaultConfigurationFactory {
             dependencyLockingProvider,
             resolutionStrategyFactory,
             fileCollectionFactory,
-            buildOperationExecutor,
+            buildOperationRunner,
             instantiator,
             artifactNotationParser,
             capabilityNotationParser,
@@ -233,7 +233,7 @@ public class DefaultConfigurationFactory {
             projectStateRegistry,
             workerThreadRegistry,
             domainObjectCollectionFactory,
-            calculatedValueContainerFactory,
+            calculatedValueFactory,
             this,
             taskDependencyFactory
         );
@@ -264,7 +264,7 @@ public class DefaultConfigurationFactory {
             dependencyLockingProvider,
             resolutionStrategyFactory,
             fileCollectionFactory,
-            buildOperationExecutor,
+            buildOperationRunner,
             instantiator,
             artifactNotationParser,
             capabilityNotationParser,
@@ -275,7 +275,7 @@ public class DefaultConfigurationFactory {
             projectStateRegistry,
             workerThreadRegistry,
             domainObjectCollectionFactory,
-            calculatedValueContainerFactory,
+            calculatedValueFactory,
             this,
             taskDependencyFactory
         );

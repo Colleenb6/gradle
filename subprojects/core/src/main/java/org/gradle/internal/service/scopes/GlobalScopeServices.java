@@ -39,6 +39,7 @@ import org.gradle.api.internal.tasks.TaskDependencyFactory;
 import org.gradle.api.internal.tasks.properties.annotations.AbstractOutputPropertyAnnotationHandler;
 import org.gradle.api.internal.tasks.properties.annotations.OutputPropertyRoleAnnotationHandler;
 import org.gradle.api.internal.tasks.userinput.DefaultUserInputReader;
+import org.gradle.api.internal.tasks.userinput.UserInputReader;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.tasks.util.PatternSet;
 import org.gradle.api.tasks.util.internal.CachingPatternSpecFactory;
@@ -78,6 +79,8 @@ import org.gradle.internal.operations.BuildOperationListenerManager;
 import org.gradle.internal.operations.BuildOperationProgressEventEmitter;
 import org.gradle.internal.operations.CurrentBuildOperationRef;
 import org.gradle.internal.operations.DefaultBuildOperationProgressEventEmitter;
+import org.gradle.internal.problems.failure.DefaultFailureFactory;
+import org.gradle.internal.problems.failure.FailureFactory;
 import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.scripts.DefaultScriptFileResolver;
 import org.gradle.internal.scripts.DefaultScriptFileResolverListeners;
@@ -137,7 +140,7 @@ public class GlobalScopeServices extends WorkerSharedGlobalScopeServices {
         }
         registration.add(DefaultScriptFileResolverListeners.class);
         registration.add(BuildLayoutFactory.class);
-        registration.add(DefaultUserInputReader.class);
+        registration.add(UserInputReader.class, DefaultUserInputReader.class);
     }
 
     ScriptFileResolver createScriptFileResolver(DefaultScriptFileResolverListeners listeners) {
@@ -305,5 +308,9 @@ public class GlobalScopeServices extends WorkerSharedGlobalScopeServices {
 
     AgentInitializer createAgentInitializer() {
         return new AgentInitializer(agentStatus);
+    }
+
+    FailureFactory createFailureFactory() {
+        return DefaultFailureFactory.withDefaultClassifier();
     }
 }
